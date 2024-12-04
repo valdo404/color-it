@@ -1,6 +1,5 @@
+use std::collections::{HashSet, VecDeque};
 use std::error::Error;
-
-use std::alloc::GlobalAlloc;
 
 #[derive(Debug, Clone)]
 struct Grid {
@@ -70,34 +69,35 @@ impl Grid {
             return;
         }
 
-        let mut stack = vec![(0, 0)];
-        while let Some((x, y)) = stack.pop() {
-            if self.data[y * self.size + x] != source_color {
+        let mut queue = VecDeque::new();
+        queue.push_back(0); // Start from the top-left corner, index 0
+
+        while let Some(index) = queue.pop_front() {
+            let (x, y) = (index % self.size, index / self.size);
+
+            if self.data[index] != source_color {
                 continue;
             }
 
-            self.data[y * self.size + x] = target_color;
+            self.data[index] = target_color;
 
-            // Add adjacent cells
-            if x > 0 { stack.push((x-1, y)); }
-            if y > 0 { stack.push((x, y-1)); }
-            if x + 1 < self.size { stack.push((x+1, y)); }
-            if y + 1 < self.size { stack.push((x, y+1)); }
+            // Add adjacent cells to the queue by calculating their indices
+            for &(dx, dy) in &[(0, 1), (1, 0), (0, -1), (-1, 0)] {
+                let nx = (x as isize + dx) as usize;
+                let ny = (y as isize + dy) as usize;
+
+                if nx < self.size && ny < self.size && self.data[ny * self.size + nx] == source_color {
+                    queue.push_back(ny * self.size + nx);
+                }
+            }
         }
     }
 
     fn is_complete(&self) -> bool {
         let target = self.data[0];
-        for &color in &self.data {
-            if color != target {
-                return false;
-            }
-        }
-        true
+        self.data.iter().all(|&color| color == target)
     }
 }
-
-use std::collections::HashSet;
 
 fn solve(grid: &mut Grid) -> Vec<u8> {
     grid.print_stats();
@@ -203,6 +203,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(mut grid) = Grid::from_csv(&input) {
         let solution = solve(&mut grid);
         println!("Found solution in {} moves", solution.len());
+
+        if grid.apply_solution(&solution) {
+            println!("Solution verified successfully!");
+        } else {
+            println!("Solution failed to complete the grid.");
+        }
+
         save_solution(&solution)?;
     } else {
         println!("Failed to parse input grid");
@@ -249,10 +256,11 @@ mod tests {
 
     #[test]
     fn test_flood_fill() {
-        let mut grid = Grid::new(2, 3);
-        grid.data = vec![0, 1, 1, 1];
+        let mut grid = Grid::new(3, 3);
+        grid.data = vec![0, 1, 0, 1, 0, 0, 1, 0, 0];
+
         grid.flood_fill(2);
-        assert_eq!(grid.data, vec![2, 1, 1, 1]);
+        assert_eq!(grid.data, vec![2, 1, 2, 1, 2, 2, 1, 2, 2]);
     }
 
     #[test]
