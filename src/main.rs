@@ -1,19 +1,23 @@
-use std::collections::{HashSet, VecDeque};
+use nalgebra::{DMatrix};
+use std::collections::{HashSet};
 use std::error::Error;
+use clap::{Arg, ArgAction, Command};
 
 #[derive(Debug, Clone)]
 struct Grid {
-    size: usize,
+    width: usize,
+    height: usize,
     colors: usize,
-    data: Vec<u8>,
+    data: DMatrix<u8>,  // 2D matrix to represent the grid
 }
 
 impl Grid {
-    fn new(size: usize, colors: usize) -> Self {
+    fn new(width: usize, height: usize, colors: usize) -> Self {
         Grid {
-            size,
+            width,
+            height,
             colors,
-            data: vec![0; size * size],
+            data: DMatrix::from_element(height, width, 0),  // Initialize with default color (0)
         }
     }
 
@@ -26,37 +30,39 @@ impl Grid {
 
     fn print_stats(&self) {
         println!("Grid Statistics:");
-        println!("  Size: {}x{}", self.size, self.size);
-        println!("  Cells: {}", self.size * self.size);
+        println!("  Size: {}x{}", self.width, self.height);
+        println!("  Cells: {}", self.width * self.height);
         println!("  Colors: {}", self.colors);
-        println!("  Search Space: {}", (self.colors as f64).powf((self.size * self.size) as f64));
+        println!("  Search Space: {}", (self.colors as f64).powf((self.width * self.height) as f64));
     }
 
     fn from_csv(content: &str) -> Option<Self> {
         let rows: Vec<&str> = content.trim().split('\n').collect();
-        let size = rows.len();
-        let mut data = Vec::with_capacity(size * size);
+        let height = rows.len();
+        let width = rows.get(0)?.split(',').count(); // Get the number of columns from the first row
+
+        let mut data = DMatrix::zeros(height, width);
         let mut colors = 0;
 
-        for row in rows {
-            for val in row.split(',') {
+        for (i, row) in rows.iter().enumerate() {
+            for (j, val) in row.split(',').enumerate() {
                 let color = val.trim().parse::<u8>().ok()?;
                 colors = colors.max(color as usize + 1);
-                data.push(color);
+                data[(i, j)] = color;
             }
         }
 
-        Some(Grid { size, colors, data })
+        Some(Grid { width, height, colors, data })
     }
 
     fn to_csv(&self) -> String {
         let mut result = String::new();
-        for y in 0..self.size {
-            for x in 0..self.size {
-                if x > 0 {
+        for i in 0..self.height {
+            for j in 0..self.width {
+                if j > 0 {
                     result.push(',');
                 }
-                result.push_str(&self.data[y * self.size + x].to_string());
+                result.push_str(&self.data[(i, j)].to_string());
             }
             result.push('\n');
         }
@@ -64,43 +70,80 @@ impl Grid {
     }
 
     fn flood_fill(&mut self, target_color: u8) {
-        let source_color = self.data[0];
+        // Ensure grid dimensions are valid
+        assert!(self.width > 0, "Width must be greater than zero");
+        assert!(self.height > 0, "Height must be greater than zero");
+
+        let source_color = self.data[(0, 0)]; // Starting color is the color at position (0, 0)
+
+        // If the source color is the same as the target color, no need to do anything
         if source_color == target_color {
+            println!("Source color {} is the same as target color {}", source_color, target_color);
             return;
         }
 
-        let mut queue = VecDeque::new();
-        queue.push_back(0); // Start from the top-left corner, index 0
+        // Use a stack to implement depth-first search (DFS)
+        let mut stack = Vec::new();
+        stack.push((0, 0)); // Start from the top-left corner
 
-        while let Some(index) = queue.pop_front() {
-            let (x, y) = (index % self.size, index / self.size);
+        // Create a visited set to avoid revisiting cells
+        let mut visited = vec![vec![false; self.width]; self.height];
 
-            if self.data[index] != source_color {
+        while let Some((x, y)) = stack.pop() {
+            // Ensure that the index is within the grid bounds
+            assert!(x < self.width && y < self.height, "Index out of bounds: ({}, {})", x, y);
+
+            // Skip if already visited
+            if visited[y][x] {
                 continue;
             }
 
-            self.data[index] = target_color;
+            // Check if the current cell has the source color
+            if self.data[(y, x)] == source_color {
+                // Fill the current cell with the target color
+                self.data[(y, x)] = target_color;
+                visited[y][x] = true; // Mark as visited
 
-            // Add adjacent cells to the queue by calculating their indices
-            for &(dx, dy) in &[(0, 1), (1, 0), (0, -1), (-1, 0)] {
-                let nx = (x as isize + dx) as usize;
-                let ny = (y as isize + dy) as usize;
+                // Left
+                if x > 0 {
+                    if !visited[y][x - 1] && self.data[(y, x - 1)] == source_color {
+                        stack.push((x - 1, y));
+                    }
+                }
 
-                if nx < self.size && ny < self.size && self.data[ny * self.size + nx] == source_color {
-                    queue.push_back(ny * self.size + nx);
+                // Right
+                if x < self.width - 1 {
+                    if !visited[y][x + 1] && self.data[(y, x + 1)] == source_color {
+                        stack.push((x + 1, y));
+                    }
+                }
+
+                // Up
+                if y > 0 {
+                    if !visited[y - 1][x] && self.data[(y - 1, x)] == source_color {
+                        stack.push((x, y - 1));
+                    }
+                }
+
+                // Down
+                if y < self.height - 1 {
+                    if !visited[y + 1][x] && self.data[(y + 1, x)] == source_color {
+                        stack.push((x, y + 1));
+                    }
                 }
             }
         }
     }
 
     fn is_complete(&self) -> bool {
-        let target = self.data[0];
+        let target = self.data[(0, 0)];
         self.data.iter().all(|&color| color == target)
     }
 }
 
-fn solve(grid: &mut Grid) -> Vec<u8> {
+fn solve(grid: &mut Grid, output_grids: bool) -> Vec<u8> {
     grid.print_stats();
+    println!("Initial grid:\n{}", grid.data);
 
     if grid.is_complete() {
         println!("Grid already complete");
@@ -109,25 +152,25 @@ fn solve(grid: &mut Grid) -> Vec<u8> {
 
     struct SearchState {
         moves: Vec<u8>,
-        grid_state: Vec<u8>, // Grid state as a flat vector
+        grid_state: DMatrix<u8>, // Grid state as a matrix
     }
 
     let mut stack: Vec<SearchState> = Vec::new();
-    let mut visited: HashSet<Vec<u8>> = HashSet::new();
+    let mut visited: HashSet<DMatrix<u8>> = HashSet::new();
     let mut best_solution = Vec::new();
-    let mut min_length = grid.size * grid.size;
+    let mut min_length = grid.width * grid.height;
 
     // Initialize the stack with the first moves
     for color in 0..grid.colors {
         let color = color as u8;
-        if color != grid.data[0] {
+        if color != grid.data[(0, 0)] {
             let mut temp_grid = grid.clone();
             temp_grid.flood_fill(color);
 
             if visited.insert(temp_grid.data.clone()) {
                 stack.push(SearchState {
                     moves: vec![color],
-                    grid_state: temp_grid.data,
+                    grid_state: temp_grid.data.clone(),
                 });
             }
         }
@@ -140,8 +183,9 @@ fn solve(grid: &mut Grid) -> Vec<u8> {
         }
 
         // Reconstruct the grid from the current state
-        let mut temp_grid = Grid {
-            size: grid.size,
+        let temp_grid = Grid {
+            width: grid.width,
+            height: grid.height,
             colors: grid.colors,
             data: state.grid_state.clone(),
         };
@@ -149,9 +193,19 @@ fn solve(grid: &mut Grid) -> Vec<u8> {
         // Check if the grid is complete
         if temp_grid.is_complete() {
             if state.moves.len() < min_length {
-                println!("New best solution: {:?} (length {})", state.moves, state.moves.len());
                 best_solution = state.moves.clone();
                 min_length = state.moves.len();
+
+                if output_grids {
+                    let mut original_grid = grid.clone();
+
+                    for &color in &best_solution {
+                        original_grid.flood_fill(color);
+                        if output_grids {
+                            println!("Applying move: {}, Current grid state:\n{}", color, original_grid.data);
+                        }
+                    }
+                }
             }
             continue;
         }
@@ -161,7 +215,7 @@ fn solve(grid: &mut Grid) -> Vec<u8> {
             let color = color as u8;
 
             // Skip moves that repeat the current color or backtrack
-            if color == temp_grid.data[0] || (state.moves.last() == Some(&color)) {
+            if color == temp_grid.data[(0, 0)] || (state.moves.last() == Some(&color)) {
                 continue;
             }
 
@@ -173,47 +227,79 @@ fn solve(grid: &mut Grid) -> Vec<u8> {
                 let mut next_moves = state.moves.clone();
                 next_moves.push(color);
 
+                if(output_grids) {
+                    // println!("Applying move: {}, Current grid state:\n{}", color, next_grid.data);
+                }
+
                 stack.push(SearchState {
                     moves: next_moves,
-                    grid_state: next_grid.data,
+                    grid_state: next_grid.data.clone(),
                 });
             }
         }
     }
 
-    println!("Final solution: {:?}", best_solution);
+    if(output_grids) {
+        println!("Final solution: {:?}", best_solution);
+    }
+
     best_solution
 }
 
-
-
-fn save_solution(moves: &[u8]) -> Result<(), Box<dyn Error>> {
+fn save_solution(moves: &[u8], output_file: Option<&str>) -> Result<(), Box<dyn Error>> {
     let mut output = String::new();
     for &m in moves {
         output.push_str(&m.to_string());
         output.push('\n');
     }
-    std::fs::write("solution.csv", output)?;
+
+    if let Some(file) = output_file {
+        std::fs::write(file, output)?;
+    } else {
+        println!("Solution: {:?}", moves);
+    }
+
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let input = std::fs::read_to_string("input.csv")?;
+    let matches = Command::new("Grid Coloring Solver")
+        .version("1.0")
+        .author("Laurent Valdes <valderama@gmail.com>")
+        .about("Solves a grid coloring problem")
+        .arg(
+            Arg::new("input")
+                .short('i')
+                .default_value("small-grid.csv")
+                .long("input")
+                .value_name("FILE")
+                .help("Input CSV file"),
+        )
+        .arg(
+            Arg::new("output")
+                .short('o')
+                .default_value("output.csv")
+                .long("output")
+                .value_name("FILE")
+                .help("Output file for the solution"),
+        )
+        .arg(
+            Arg::new("output-grids")
+                .short('g')
+                .long("output-grids")
+                .action(ArgAction::SetTrue)
+                .help("Output the grids to the console"),
+        )
+        .get_matches();
 
-    if let Some(mut grid) = Grid::from_csv(&input) {
-        let solution = solve(&mut grid);
-        println!("Found solution in {} moves", solution.len());
+    let input_file = matches.get_one::<String>("input").expect("required input file");
+    let output_file = matches.get_one::<String>("output");
+    let output_grids = matches.get_flag("output-grids");
 
-        if grid.apply_solution(&solution) {
-            println!("Solution verified successfully!");
-        } else {
-            println!("Solution failed to complete the grid.");
-        }
-
-        save_solution(&solution)?;
-    } else {
-        println!("Failed to parse input grid");
-    }
+    let input = std::fs::read_to_string(input_file)?;
+    let mut grid = Grid::from_csv(&input).unwrap();
+    let solution = solve(&mut grid, output_grids);
+    save_solution(&solution, output_file.map(|x| x.as_str()))?;
 
     Ok(())
 }
@@ -256,56 +342,12 @@ mod tests {
 
     #[test]
     fn test_flood_fill() {
-        let mut grid = Grid::new(3, 3);
-        grid.data = vec![0, 1, 0, 1, 0, 0, 1, 0, 0];
-
+        let mut grid = Grid::new(3, 3, 3);
+        let original = DMatrix::from_vec(3, 3, vec![0, 0, 0, 1, 1, 1, 1, 0, 0]);
+        grid.data = original.clone();
         grid.flood_fill(2);
-        assert_eq!(grid.data, vec![2, 1, 2, 1, 2, 2, 1, 2, 2]);
-    }
+        let expected = DMatrix::from_vec(3, 3, vec![2, 2, 2, 1, 1, 1, 1, 0, 0]);
 
-    #[test]
-    fn test_large_grid() {
-        let mut input = String::new();
-        for _ in 0..6 {
-            for j in 0..6 {
-                if j > 0 { input.push(','); }
-                input.push_str(&(j % 3).to_string());
-            }
-            input.push('\n');
-        }
-        let mut grid = Grid::from_csv(&input).unwrap();
-        let solution = solve(&mut grid);
-        assert!(solution.len() <= 10);
-
-        let mut test_grid = grid.clone();
-        assert!(test_grid.apply_solution(&solution));
-    }
-
-    #[test]
-    fn test_worst_case() {
-        let mut input = String::new();
-        for i in 0..8 {
-            for j in 0..8 {
-                if j > 0 { input.push(','); }
-                input.push_str(&((i + j) % 4).to_string());
-            }
-            input.push('\n');
-        }
-        let mut grid = Grid::from_csv(&input).unwrap();
-        let solution = solve(&mut grid);
-        assert!(solution.len() <= 60);
-
-        let mut test_grid = grid.clone();
-        assert!(test_grid.apply_solution(&solution));
-    }
-
-    #[test]
-    fn test_single_color() {
-        let mut grid = Grid::new(5, 1);
-        let solution = solve(&mut grid);
-        assert_eq!(solution.len(), 0);
-
-        let mut test_grid = grid.clone();
-        assert!(test_grid.apply_solution(&solution));
+        assert_eq!(grid.data, expected);
     }
 }

@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rayon = "1.8"
+rayon = "1.10.0"
+nalgebra = "0.29"
+clap = "4.5.22"
 
 [profile.release]
 debug = true
