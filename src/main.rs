@@ -313,7 +313,7 @@ mod tests {
     fn test_simplest_input() {
         let input = "0,1\n1,1";
         let mut grid = Grid::from_csv(input).unwrap();
-        let solution = solve(&mut grid);
+        let solution = solve(&mut grid, false);
         assert_eq!(solution, vec![1]);
     }
 
@@ -321,7 +321,7 @@ mod tests {
     fn test_medium_input() {
         let input = "2,1,3,0,4\n1,2,2,3,1\n0,3,1,2,4\n4,1,0,3,2\n3,2,4,1,0";
         let mut grid = Grid::from_csv(input).unwrap();
-        let solution = solve(&mut grid);
+        let solution = solve(&mut grid, false);
         let mut test_grid = grid.clone();
         for &color in &solution {
             test_grid.flood_fill(color);
@@ -334,7 +334,7 @@ mod tests {
     fn test_sample_input() {
         let input = "1,2,0,0\n0,1,1,0\n2,2,0,1\n0,0,0,1";
         let mut grid = Grid::from_csv(input).unwrap();
-        let solution = solve(&mut grid);
+        let solution = solve(&mut grid, false);
         assert_eq!(solution, vec![2, 1, 2, 0, 1]);
 
         let mut test_grid = grid.clone();
