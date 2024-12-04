@@ -143,10 +143,11 @@ impl Grid {
 
 fn solve(grid: &mut Grid, output_grids: bool) -> Vec<u8> {
     grid.print_stats();
-    println!("Initial grid:\n{}", grid.data);
+    if(output_grids) {
+        println!("Initial grid:\n{}", grid.data);
+    }
 
     if grid.is_complete() {
-        println!("Grid already complete");
         return Vec::new();
     }
 
